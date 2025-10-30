@@ -8,6 +8,7 @@ class NutritionData {
   final double fat;
   final double carbs;
   final List<String> ingredients;
+  final double usefulness;
 
   NutritionData({
     required this.dishName,
@@ -17,6 +18,7 @@ class NutritionData {
     required this.fat,
     required this.carbs,
     required this.ingredients,
+    required this.usefulness,
   });
 
   factory NutritionData.fromJson(Map<String, dynamic> json) {
@@ -40,6 +42,7 @@ class NutritionData {
       fat: _parseDouble(json['fat']),
       carbs: _parseDouble(json['carbs']),
       ingredients: ingredientsList,
+      usefulness: _parseDouble(json['usefulness']),
     );
   }
 
@@ -52,6 +55,7 @@ class NutritionData {
       'fat': fat,
       'carbs': carbs,
       'ingredients': ingredients,
+      'usefulness': usefulness,
     };
   }
 }

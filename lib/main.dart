@@ -1,4 +1,6 @@
+import 'package:calorie_counter_app/screens/setup_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
 import 'utils/theme.dart';
 
@@ -14,13 +16,17 @@ void main() async {
   );
   
   // Initialize locale for date formatting (English)
-  await initializeDateFormatting('en_US', null); // Changed locale
+  await initializeDateFormatting('en_US', null);
 
-  runApp(const CalorieCounterApp());
+  final prefs = await SharedPreferences.getInstance();
+  final isSetupComplete = prefs.getBool('isSetupComplete') ?? false;
+
+  runApp(CalorieCounterApp(home: isSetupComplete ? const HomeScreen() : const SetupScreen()));
 }
 
 class CalorieCounterApp extends StatelessWidget {
-  const CalorieCounterApp({super.key});
+  final Widget home;
+  const CalorieCounterApp({super.key, required this.home});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +36,7 @@ class CalorieCounterApp extends StatelessWidget {
       theme: AppTheme.lightTheme, // You might want to define this too
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark, // Force dark theme
-      home: const HomeScreen(),
+      home: home,
     );
   }
 }
