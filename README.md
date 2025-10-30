@@ -18,7 +18,7 @@
 
 ## Overview
 
-**NutriScan** is a mobile application built with **Flutter**, leveraging **Google Gemini** through **Firebase Cloud Functions** to analyze food images and estimate nutritional information.
+**NutriScan** is a mobile application built with **Flutter**, leveraging **Google Gemini** through **Firebase Cloud Functions** to analyze food images and estimate nutritional information. It also uses the **Open Food Facts API** for barcode scanning.
 
 The AI estimates:
 - Macronutrients (protein, carbohydrates, fat)
@@ -30,14 +30,34 @@ The AI estimates:
 
 ## Features
 
-- **AI-driven Image Analysis** – Nutrition estimation powered by Google Gemini 2.5 Flash  
-- **Detailed Nutritional Data** – Calories, protein, carbs, fats, weight, and ingredients  
-- **Daily Food Logging** – Track meals (Breakfast, Lunch, Dinner, Snacks)  
-- **Daily Summary** – View total calorie and macronutrient intake  
-- **Modern Dark UI** – Clean and minimalist design optimized for readability  
-- **Secure Backend** – API keys protected via Firebase Cloud Functions  
-- **Goal Management** – Set daily calorie and macro targets  
-- **Historical Trends** – Track progress over time *(Coming Soon)*  
+- **AI-driven Image Analysis** – Nutrition estimation powered by Google Gemini 2.5 Flash
+- **Barcode Scanning** - Get nutritional information for products by scanning their barcode using the Open Food Facts API.
+- **Detailed Nutritional Data** – Calories, protein, carbs, fats, weight, and ingredients
+- **Daily Food Logging** – Track meals (Breakfast, Lunch, Dinner, Snacks)
+- **Daily Summary** – View total calorie and macronutrient intake
+- **Modern Dark UI** – Clean and minimalist design optimized for readability
+- **Secure Backend** – API keys protected via Firebase Cloud Functions
+- **Goal Management** – Set daily calorie and macro targets
+- **Personalized Onboarding** - Set up your profile and preferences for a personalized experience.
+- **Data Persistence** - User data is saved locally using `shared_preferences`.
+- **Historical Trends** – Track progress over time *(Coming Soon)*
+
+---
+
+## Technologies Used
+
+- **Frontend:** Flutter
+- **Backend:** Firebase Cloud Functions (Node.js)
+- **AI Model:** Google Gemini 2.5 Flash
+- **APIs:** Open Food Facts API
+- **Database:** `shared_preferences` for local storage
+- **State Management:** `setState`
+- **Other notable packages:**
+    - `http` for making HTTP requests
+    - `image_picker` for selecting images from the gallery or camera
+    - `mobile_scanner` for scanning barcodes
+    - `google_fonts` for custom fonts
+    - `lottie` for animations
 
 ---
 
@@ -51,9 +71,9 @@ The AI estimates:
 └────────┬────────┘
        HTTPS
          ▼
-┌─────────────────┐
-│    Firebase     │
-│ Cloud Functions │
+┌─────────────────┐          ┌────────────────────┐
+│    Firebase     │          │ Open Food Facts API│
+│ Cloud Functions │          └────────────────────┘
 │    (Node.js)    │
 └────────┬────────┘
    Secret API Key
@@ -73,11 +93,11 @@ Before setup, ensure the following are installed and configured:
 
 - **Flutter SDK** 3.19.0+ ([Installation Guide](https://docs.flutter.dev/get-started/install))
 - **Dart SDK** 3.3.0+ (included with Flutter)
-- **Android Studio** or **VS Code** with Flutter/Dart extensions  
+- **Android Studio** or **VS Code** with Flutter/Dart extensions
 - **Firebase CLI** ([Install Guide](https://firebase.google.com/docs/cli))
 - **Node.js** 18+ and npm ([Download](https://nodejs.org/))
 - **CocoaPods** (for iOS builds) ([Install](https://cocoapods.org/))
-- **Firebase Project** – Blaze Plan required for Cloud Functions with secrets  
+- **Firebase Project** – Blaze Plan required for Cloud Functions with secrets
 - **Gemini API Key** – Obtain via [Google AI Studio](https://makersuite.google.com/app/apikey)
 
 ---
@@ -88,7 +108,7 @@ Before setup, ensure the following are installed and configured:
 ```bash
 git clone <your-repository-url>
 cd <your-project-directory>
-````
+```
 
 ### 2. Install Flutter Dependencies
 
@@ -170,25 +190,30 @@ flutter run
 
 ---
 
-## Backend Details (Firebase Functions)
+## How to Use
 
-**Function:** `analyzeImage`
-
-* **Location:** `functions/index.js`
-* **Model:** Google Gemini 2.5 Flash
-* **Trigger:** HTTPS Callable Function
-* **Authentication:** via `process.env.GEMINI_API_KEY` (stored in Secret Manager)
+1.  **Onboarding:** When you first launch the app, you will be guided through a setup process to personalize your experience.
+2.  **Home Screen:** The home screen shows your daily nutritional summary.
+3.  **Add Food:**
+    *   Tap the "+" button on a meal card to open the analysis screen.
+    *   **Analyze an image:** Select an image from your gallery or take a picture. The app will analyze the image and show you the nutritional information.
+    *   **Scan a barcode:** Tap the barcode icon to open the scanner. Scan a product's barcode to get its nutritional information.
+4.  **Log Food:** After analyzing an image or scanning a barcode, you can add the food to your daily log.
+5.  **View Details:** Tap on a food item in your log to see more details.
+6.  **Settings:** Go to the settings screen to update your profile and goals.
 
 ---
 
-## Environment Variables & Secrets
+## Project Structure
 
-| File / Secret                         | Purpose                    | Included in Git? |
-| ------------------------------------- | -------------------------- | ---------------- |
-| `functions/.env`                      | Local testing (Gemini key) | No               |
-| `android/app/google-services.json`    | Android Firebase config    | No               |
-| `ios/Runner/GoogleService-Info.plist` | iOS Firebase config        | No               |
-| `android/key.properties`              | Android signing keys       | No               |
+```
+lib/
+├── models/         # Data models (NutritionData)
+├── screens/        # UI screens (HomeScreen, AnalysisScreen, etc.)
+├── services/       # Services for interacting with APIs (Firebase, OpenFoodFacts)
+├── utils/          # Utility classes (Theme)
+└── widgets/        # Reusable widgets
+```
 
 ---
 
@@ -253,5 +278,4 @@ See the [LICENSE](LICENSE) file for full details.
 **Website:** hruhrustudio.site
 **GitHub:** [@krutoychel24](https://github.com/krutoychel24)
 
-```
 ```
