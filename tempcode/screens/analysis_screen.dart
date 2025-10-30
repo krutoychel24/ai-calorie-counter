@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'package:calorie_counter_app/services/firestore_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/nutrition_data.dart';
 import '../services/firebase_service.dart';
 import '../services/open_food_facts_service.dart';
@@ -23,43 +22,24 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   final _formKey = GlobalKey<FormState>();
   final ImagePicker _picker = ImagePicker();
 
+  // Services
   final FirebaseService _firebaseService = FirebaseService();
   final OpenFoodFactsService _openFoodFactsService = OpenFoodFactsService();
-  final FirestoreService _firestoreService = FirestoreService();
 
+  // State
   File? _selectedImage;
   NutritionData? _nutritionData;
   bool _isLoading = false;
   bool _isEditing = false;
-  String _userLanguage = 'en';
 
-  final _infoController = TextEditingController();
-  final _dishNameController = TextEditingController();
-  final _caloriesController = TextEditingController();
-  final _proteinController = TextEditingController();
-  final _carbsController = TextEditingController();
-  final _fatController = TextEditingController();
-  final _weightController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserData();
-  }
-
-  Future<void> _loadUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final userData = await _firestoreService.getUserData(user.uid);
-    if (userData.exists && userData.data() != null) {
-      final data = userData.data() as Map<String, dynamic>;
-      if (mounted) {
-        setState(() {
-          _userLanguage = data['userLanguage'] as String? ?? 'en';
-        });
-      }
-    }
-  }
+  // Controllers
+  final TextEditingController _infoController = TextEditingController();
+  final TextEditingController _dishNameController = TextEditingController();
+  final TextEditingController _caloriesController = TextEditingController();
+  final TextEditingController _proteinController = TextEditingController();
+  final TextEditingController _carbsController = TextEditingController();
+  final TextEditingController _fatController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
 
   @override
   void dispose() {
@@ -90,7 +70,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final XFile? image = await _picker.pickImage(source: source, maxWidth: 1920, maxHeight: 1920, imageQuality: 85);
+      final XFile? image = await _picker.pickImage(
+          source: source, maxWidth: 1920, maxHeight: 1920, imageQuality: 85);
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -110,7 +91,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     }
     setState(() => _isLoading = true);
     try {
-      final result = await _firebaseService.analyzeImage(_selectedImage!, _infoController.text.isNotEmpty ? _infoController.text : null, _userLanguage);
+      final prefs = await SharedPreferences.getInstance();
+      final langCode = prefs.getString('userLanguage') ?? 'en';
+
+      final result = await _firebaseService.analyzeImage(
+        _selectedImage!,
+        _infoController.text.isNotEmpty ? _infoController.text : null,
+        langCode,
+      );
       _updateStateWithNutritionData(result);
     } catch (e) {
       if (mounted) {
@@ -122,7 +110,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   Future<void> _scanBarcode() async {
     try {
-      final String? barcode = await Navigator.push(context, MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()));
+      final String? barcode = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
+      );
       if (barcode == null) return;
 
       setState(() => _isLoading = true);
@@ -165,14 +156,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(title: Text('Add to ${widget.mealType}'), backgroundColor: theme.scaffoldBackgroundColor, elevation: 0),
+      appBar: AppBar(title: Text('Add to ${widget.mealType}')),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -182,7 +171,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               const SizedBox(height: 24),
               _buildInfoField(context),
               const SizedBox(height: 24),
-              if (_nutritionData != null) _buildResultsSection(context),
+              _buildResultsSection(context),
               const SizedBox(height: 24),
               if (_nutritionData != null) _buildAddFoodButton(context),
             ],
@@ -199,8 +188,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant,
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
         ),
         child: Stack(
           fit: StackFit.expand,
@@ -209,19 +199,28 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               Image.file(_selectedImage!, fit: BoxFit.cover)
             else
               Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.image_search, size: 48, color: theme.colorScheme.onSurface.withOpacity(0.5)),
-                    const SizedBox(height: 8),
-                    Text('Select an image to analyze', style: theme.textTheme.titleMedium),
-                  ],
-                ),
+                child: Text('Select an image to analyze', style: theme.textTheme.titleMedium),
               ),
             if (_isLoading) ...[
               Container(color: Colors.black.withOpacity(0.6)),
-              const Center(child: CircularProgressIndicator()),
+              const AnimatedScanLine(width: double.infinity, height: double.infinity, color: Colors.white),
+              const Center(child: CircularProgressIndicator(color: Colors.white)),
             ],
+            if (_selectedImage != null && !_isLoading)
+              Positioned(
+                top: 12, right: 12,
+                child: IconButton(
+                  onPressed: () => setState(() {
+                    _selectedImage = null;
+                    _nutritionData = null;
+                  }),
+                  icon: const Icon(Icons.cancel_rounded, size: 28),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withOpacity(0.4),
+                    foregroundColor: Colors.white.withOpacity(0.8),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -236,13 +235,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             onPressed: () => _pickImage(ImageSource.gallery),
             icon: const Icon(Icons.photo_library_outlined, size: 20),
             label: const Text('Gallery'),
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
           ),
         ),
         const SizedBox(width: 12),
         OutlinedButton(
           onPressed: _scanBarcode,
-          style: OutlinedButton.styleFrom(minimumSize: const Size(60, 50)),
+          style: OutlinedButton.styleFrom(minimumSize: const Size(60, 60)),
           child: const Icon(Icons.qr_code_scanner_outlined, size: 24),
         ),
         const SizedBox(width: 12),
@@ -251,7 +249,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             onPressed: _selectedImage != null && !_isLoading ? _analyzeImage : null,
             icon: const Icon(Icons.document_scanner_outlined, size: 20),
             label: Text(_isLoading ? 'Analyzing...' : 'Analyze'),
-            style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
           ),
         ),
       ],
@@ -265,7 +262,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       decoration: const InputDecoration(
         hintText: 'Any extra details? (e.g., brand, cooking method)',
         prefixIcon: Icon(Icons.notes_outlined, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(16)))
       ),
     );
   }
@@ -273,25 +269,26 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   Widget _buildResultsSection(BuildContext context) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SizeTransition(sizeFactor: animation, child: child),
+      ),
       child: _nutritionData != null
-          ? Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: _buildInteractiveCard(context))
+          ? _buildInteractiveCard(context)
           : const SizedBox.shrink(),
     );
   }
 
   Widget _buildInteractiveCard(BuildContext context) {
     final theme = Theme.of(context);
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-      child: _isEditing
-          ? _buildEditView(theme)
-          : _buildDisplayView(theme),
+    return Card(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+        child: _isEditing
+            ? _buildEditView(theme)
+            : _buildDisplayView(theme),
+      ),
     );
   }
 
@@ -333,9 +330,35 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 _buildMacroDisplay(theme, _fatController.text, 'Fat', 'g', theme.colorScheme.secondaryContainer),
               ],
             ),
+            const Divider(height: 40),
+            _buildUsefulnessIndicator(theme),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildUsefulnessIndicator(ThemeData theme) {
+    final score = _nutritionData?.usefulness ?? 0.0;
+    final color = Color.lerp(Colors.red, Colors.green, score / 10) ?? Colors.grey;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('Health Score', style: theme.textTheme.titleMedium),
+        const SizedBox(width: 16),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            CircularProgressIndicator(
+              value: score / 10,
+              color: color,
+              backgroundColor: color.withOpacity(0.2),
+              strokeWidth: 6,
+            ),
+            Text(score.toStringAsFixed(1), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          ],
+        )
+      ],
     );
   }
 
