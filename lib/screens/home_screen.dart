@@ -1,105 +1,111 @@
+import 'dart:ui';
+import 'package:calorie_counter_app/models/nutrition_data.dart';
+import 'package:calorie_counter_app/screens/analysis_screen.dart';
+import 'package:calorie_counter_app/screens/profile_screen.dart';
+import 'package:calorie_counter_app/screens/settings_screen.dart';
+import 'package:calorie_counter_app/services/auth_service.dart';
+import 'package:calorie_counter_app/services/connectivity_service.dart';
+import 'package:calorie_counter_app/services/firestore_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import '../models/nutrition_data.dart';
-import 'analysis_screen.dart';
-import 'settings_screen.dart';
+import 'package:provider/provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-  @override State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  DateTime _selectedDate = DateTime.now();
-  late SharedPreferences _prefs;
-
-  double _calorieGoal = 2200, _proteinGoal = 150, _carbGoal = 250, _fatGoal = 70;
-  bool _isLoadingGoals = true, _isLoadingMeals = true;
-
-  Map<String, List<NutritionData>> dailyMeals = {
-    'Breakfast': [], 'Lunch': [], 'Dinner': [], 'Snacks': [],
-  };
-
-  late Map<String, Color> mealAccentColors;
 
   @override
-  void didChangeDependencies() {
-     super.didChangeDependencies();
-     final colors = Theme.of(context).colorScheme;
-     mealAccentColors = {
-        'Breakfast': colors.tertiaryContainer,
-        'Lunch': colors.surfaceTint,
-        'Dinner': colors.inverseSurface,
-        'Snacks': colors.inversePrimary,
-     };
-  }
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final FirestoreService _firestoreService = FirestoreService();
+  late String _uid;
+
+  DateTime _selectedDate = DateTime.now();
+  bool _isLoading = true;
+
+  // User Data
+  String? _avatarUrl;
+  String? _displayName;
+  double _calorieGoal = 2200, _proteinGoal = 150, _carbGoal = 250, _fatGoal = 70;
+
+  Map<String, List<NutritionData>> _dailyMeals = {
+    'Breakfast': [], 'Lunch': [], 'Dinner': [], 'Snacks': [],
+  };
 
   @override
   void initState() {
     super.initState();
-    _initPreferencesAndLoadData();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      Provider.of<AuthService>(context, listen: false).signOut();
+      return;
+    }
+    _uid = user.uid;
+    _loadAllData();
+    WidgetsBinding.instance.addObserver(this);
   }
 
-  Future<void> _initPreferencesAndLoadData() async {
-    _prefs = await SharedPreferences.getInstance();
-    await _loadGoals();
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final selected = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      if (selected != today) {
+        setState(() => _selectedDate = today);
+        _loadMealsForSelectedDate();
+      }
+    }
+  }
+
+  Future<void> _loadAllData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    await _loadUserData();
     await _loadMealsForSelectedDate();
-    if (mounted) {
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadUserData() async {
+    final userDoc = await _firestoreService.getUserData(_uid);
+    if (mounted && userDoc.exists) {
+      final data = userDoc.data() as Map<String, dynamic>;
       setState(() {
-        _isLoadingGoals = false;
-        _isLoadingMeals = false;
+        _displayName = data['displayName'];
+        _avatarUrl = data['avatarUrl'];
+        _calorieGoal = (data['calorieGoal'] as num?)?.toDouble() ?? 2200;
+        _proteinGoal = (data['proteinGoal'] as num?)?.toDouble() ?? 150;
+        _carbGoal = (data['carbGoal'] as num?)?.toDouble() ?? 250;
+        _fatGoal = (data['fatGoal'] as num?)?.toDouble() ?? 70;
       });
     }
   }
 
-  Future<void> _loadGoals() async {
-     _calorieGoal = _prefs.getDouble('calorieGoal') ?? 2200;
-     _proteinGoal = _prefs.getDouble('proteinGoal') ?? 150;
-     _carbGoal = _prefs.getDouble('carbGoal') ?? 250;
-     _fatGoal = _prefs.getDouble('fatGoal') ?? 70;
-  }
-
-  String _getDateKey(DateTime date) => 'meals_${DateFormat('yyyy-MM-dd').format(date)}';
-
   Future<void> _loadMealsForSelectedDate() async {
-    if (mounted) setState(() => _isLoadingMeals = true);
-    final String key = _getDateKey(_selectedDate);
-    final String? mealsJsonString = _prefs.getString(key);
-    Map<String, List<NutritionData>> loadedMeals = {
-       'Breakfast': [], 'Lunch': [], 'Dinner': [], 'Snacks': [],
-    };
-    if (mealsJsonString != null) {
-      try {
-        final Map<String, dynamic> decodedMap = jsonDecode(mealsJsonString);
-        decodedMap.forEach((mealType, items) {
-          if (items is List && loadedMeals.containsKey(mealType)) {
-             loadedMeals[mealType] = items
-                .map((item) => NutritionData.fromJson(item as Map<String, dynamic>))
-                .toList();
-          }
-        });
-      } catch (e) { print("Error decoding meals for key $key: $e"); }
-    }
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    final meals = await _firestoreService.getMealsForDate(_uid, _selectedDate);
     if (mounted) {
-       setState(() { dailyMeals = loadedMeals; _isLoadingMeals = false; });
+      setState(() {
+        _dailyMeals = meals;
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _saveMealsForSelectedDate() async {
-    final String key = _getDateKey(_selectedDate);
-    try {
-      final String mealsJsonString = jsonEncode(
-        dailyMeals.map((key, value) => MapEntry(key, value.map((item) => item.toJson()).toList())),
-      );
-       await _prefs.setString(key, mealsJsonString);
-    } catch (e) { print("Error encoding meals for key $key: $e"); }
-  }
-
-  void _changeDate(int days) async {
-    setState(() { _selectedDate = _selectedDate.add(Duration(days: days)); _isLoadingMeals = true; });
-    await _loadMealsForSelectedDate();
+  void _onDateChange(int days) {
+    setState(() {
+      _selectedDate = _selectedDate.add(Duration(days: days));
+      _loadMealsForSelectedDate();
+    });
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -110,359 +116,386 @@ class _HomeScreenState extends State<HomeScreen> {
       lastDate: DateTime(2101),
     );
     if (picked != null && picked != _selectedDate) {
-      setState(() { _selectedDate = picked; _isLoadingMeals = true; });
-       await _loadMealsForSelectedDate();
+      setState(() => _selectedDate = picked);
+      _loadMealsForSelectedDate();
     }
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final tomorrow = today.add(const Duration(days: 1));
-    final checkDate = DateTime(date.year, date.month, date.day);
-    if (checkDate == today) return 'Today';
-    if (checkDate == yesterday) return 'Yesterday';
-    if (checkDate == tomorrow) return 'Tomorrow';
-    return DateFormat.yMMMMd('en_US').format(date);
-  }
-
-  Future<void> _navigateAndAddMeal(BuildContext context, String mealType) async {
+  Future<void> _navigateAndAddMeal(String mealType) async {
+    final connectivityService = Provider.of<ConnectivityService>(context, listen: false);
+    if (!connectivityService.isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No internet connection')));
+      return;
+    }
     final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AnalysisScreen(mealType: mealType)));
-    if (result != null && result is NutritionData) {
-      setState(() { dailyMeals[mealType]?.add(result); });
-      await _saveMealsForSelectedDate();
+    if (result is NutritionData) {
+      await _firestoreService.addMeal(_uid, mealType, result, _selectedDate);
+      _loadMealsForSelectedDate();
     }
-  }
-
-  Future<void> _navigateToSettings(BuildContext context) async {
-     final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()));
-     if (result != null && result is Map<String, double>) {
-       await _prefs.setDouble('calorieGoal', result['calories'] ?? _calorieGoal);
-       await _prefs.setDouble('proteinGoal', result['protein'] ?? _proteinGoal);
-       await _prefs.setDouble('carbGoal', result['carbs'] ?? _carbGoal);
-       await _prefs.setDouble('fatGoal', result['fat'] ?? _fatGoal);
-       await _loadGoals();
-       if (mounted) setState(() {});
-     }
-  }
-
-  double _getMacroForMeal(String mealType, String macro) {
-     return dailyMeals[mealType]?.fold<double>(0.0, (double sum, item) {
-       switch(macro) {
-         case 'protein': return sum + item.protein;
-         case 'carbs': return sum + item.carbs;
-         case 'fat': return sum + item.fat;
-         default: return sum;
-       }
-     }) ?? 0.0;
-  }
-
-  int _getCaloriesForMeal(String mealType) => dailyMeals[mealType]?.fold<int>(0, (int sum, item) => sum + item.calories.toInt()) ?? 0;
-
-  Map<String, double> _getTotalMacros() {
-    double calories = 0, protein = 0, carbs = 0, fat = 0;
-    for (var list in dailyMeals.values) { for (var item in list) {
-        calories += item.calories; protein += item.protein; carbs += item.carbs; fat += item.fat;
-    }}
-    return {'calories': calories, 'protein': protein, 'carbs': carbs, 'fat': fat};
-  }
-
-  void _showFoodItemDetails(BuildContext context, String mealType, int index) {
-     final item = dailyMeals[mealType]![index];
-     final theme = Theme.of(context);
-     showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-           return AlertDialog(
-              backgroundColor: theme.colorScheme.surface,
-              title: Text(item.dishName, style: theme.textTheme.headlineSmall),
-              content: SingleChildScrollView(
-                 child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                       Text('Weight: ${item.weight.toStringAsFixed(0)} g'),
-                       const SizedBox(height: 8),
-                       Text('Calories: ${item.calories.toStringAsFixed(0)} kcal', style: const TextStyle(fontWeight: FontWeight.bold)),
-                       const SizedBox(height: 8),
-                       Text('Protein: ${item.protein.toStringAsFixed(1)} g'),
-                       Text('Carbs: ${item.carbs.toStringAsFixed(1)} g'),
-                       Text('Fat: ${item.fat.toStringAsFixed(1)} g'),
-                       if (item.ingredients.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          Text('Ingredients:', style: theme.textTheme.titleSmall),
-                          const SizedBox(height: 4),
-                          Wrap(
-                             spacing: 6, runSpacing: 4,
-                             children: item.ingredients.map((ing) => Chip(
-                                label: Text(ing), labelStyle: theme.textTheme.bodySmall,
-                                padding: EdgeInsets.zero, visualDensity: VisualDensity.compact,
-                                backgroundColor: theme.colorScheme.surfaceVariant,
-                             )).toList(),
-                          )
-                       ]
-                    ],
-                 ),
-              ),
-              actions: <Widget>[
-                 TextButton(
-                    child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                    onPressed: () { Navigator.of(dialogContext).pop(); _deleteFoodItem(mealType, index); },
-                 ),
-                 TextButton(
-                    child: Text('Close', style: TextStyle(color: theme.colorScheme.primary)),
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                 ),
-              ],
-           );
-        },
-     );
-  }
-
-  void _deleteFoodItem(String mealType, int index) {
-     setState(() { dailyMeals[mealType]?.removeAt(index); });
-     _saveMealsForSelectedDate();
-     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item deleted')));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final totalMacros = _getTotalMacros();
-    bool showLoading = _isLoadingGoals || _isLoadingMeals;
-
     return Scaffold(
-      appBar: AppBar(
-        title: _buildDateSelector(theme, context),
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(onPressed: () => _selectDate(context), icon: const Icon(Icons.calendar_today_outlined, size: 20), tooltip: 'Select Date'),
-          IconButton(onPressed: () => _navigateToSettings(context), icon: const Icon(Icons.settings_outlined, size: 22), tooltip: 'Settings'),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: showLoading
-        ? const Center(child: CircularProgressIndicator())
-        : ListView(
-            physics: const ClampingScrollPhysics(), // Use clamping physics
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), // Reduced bottom padding
-            children: [
-              _buildDailySummaryCard(theme, totalMacros),
-              const SizedBox(height: 24),
-              _buildMealCard(
-                theme: theme, title: 'Breakfast', icon: Icons.wb_sunny_outlined,
-                accentColor: mealAccentColors['Breakfast']!,
-                calories: _getCaloriesForMeal('Breakfast'), protein: _getMacroForMeal('Breakfast', 'protein'),
-                carbs: _getMacroForMeal('Breakfast', 'carbs'), fat: _getMacroForMeal('Breakfast', 'fat'),
-                items: dailyMeals['Breakfast'] ?? [],
-                onAdd: () => _navigateAndAddMeal(context, 'Breakfast'),
-                 onItemTap: (index) => _showFoodItemDetails(context, 'Breakfast', index),
-              ),
-              const SizedBox(height: 16),
-              _buildMealCard(
-                theme: theme, title: 'Lunch', icon: Icons.restaurant_outlined,
-                accentColor: mealAccentColors['Lunch']!,
-                calories: _getCaloriesForMeal('Lunch'), protein: _getMacroForMeal('Lunch', 'protein'),
-                carbs: _getMacroForMeal('Lunch', 'carbs'), fat: _getMacroForMeal('Lunch', 'fat'),
-                items: dailyMeals['Lunch'] ?? [],
-                onAdd: () => _navigateAndAddMeal(context, 'Lunch'),
-                onItemTap: (index) => _showFoodItemDetails(context, 'Lunch', index),
-              ),
-              const SizedBox(height: 16),
-              _buildMealCard(
-                 theme: theme, title: 'Dinner', icon: Icons.nightlight_outlined,
-                 accentColor: mealAccentColors['Dinner']!,
-                 calories: _getCaloriesForMeal('Dinner'), protein: _getMacroForMeal('Dinner', 'protein'),
-                 carbs: _getMacroForMeal('Dinner', 'carbs'), fat: _getMacroForMeal('Dinner', 'fat'),
-                 items: dailyMeals['Dinner'] ?? [],
-                 onAdd: () => _navigateAndAddMeal(context, 'Dinner'),
-                 onItemTap: (index) => _showFoodItemDetails(context, 'Dinner', index),
-              ),
-              const SizedBox(height: 16),
-              _buildMealCard(
-                 theme: theme, title: 'Snacks', icon: Icons.fastfood_outlined,
-                 accentColor: mealAccentColors['Snacks']!,
-                 calories: _getCaloriesForMeal('Snacks'), protein: _getMacroForMeal('Snacks', 'protein'),
-                 carbs: _getMacroForMeal('Snacks', 'carbs'), fat: _getMacroForMeal('Snacks', 'fat'),
-                 items: dailyMeals['Snacks'] ?? [],
-                 onAdd: () => _navigateAndAddMeal(context, 'Snacks'),
-                 onItemTap: (index) => _showFoodItemDetails(context, 'Snacks', index),
-              ),
-            ],
-          ),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : CustomScrollView(
+              slivers: [
+                _buildAppBar(context),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildDailySummary(context),
+                      const SizedBox(height: 32),
+                      _buildMealsSection(context),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
-  Widget _buildDateSelector(ThemeData theme, BuildContext context) {
-    final buttonStyle = theme.iconButtonTheme.style?.copyWith(
-      padding: const MaterialStatePropertyAll(EdgeInsets.all(12)),
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(onPressed: () => _changeDate(-1), icon: const Icon(Icons.chevron_left, size: 24), style: buttonStyle, tooltip: 'Previous Day'),
-        InkWell(
-          onTap: () => _selectDate(context),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: Text(_formatDate(_selectedDate), style: theme.appBarTheme.titleTextStyle),
+  SliverAppBar _buildAppBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return SliverAppBar(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      pinned: true,
+      floating: false,
+      expandedHeight: 120,
+      automaticallyImplyLeading: false,
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+        title: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Today',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w300,
+                color: theme.colorScheme.onBackground.withOpacity(0.6),
+              ),
+            ),
+            _buildDateSelector(),
+          ],
+        ),
+      ),
+      actions: [
+        IconButton(
+          onPressed: () => _selectDate(context),
+          icon: const Icon(Icons.calendar_today_outlined, size: 22),
+          tooltip: 'Select Date',
+        ),
+        IconButton(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+          icon: const Icon(Icons.settings_outlined, size: 22),
+          tooltip: 'Settings',
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+            );
+            if (result == true) _loadUserData();
+          },
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3), width: 2),
+            ),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+              backgroundColor: theme.colorScheme.surfaceVariant,
+              child: _avatarUrl == null
+                  ? Icon(Icons.person_outline, size: 20, color: theme.colorScheme.primary)
+                  : null,
+            ),
           ),
         ),
-        IconButton(onPressed: () => _changeDate(1), icon: const Icon(Icons.chevron_right, size: 24), style: buttonStyle, tooltip: 'Next Day'),
+        const SizedBox(width: 20),
       ],
     );
   }
 
-  Widget _buildDailySummaryCard(ThemeData theme, Map<String, double> macros) {
-    final double currentCalories = macros['calories'] ?? 0;
-    final double remainingCalories = _calorieGoal - currentCalories;
-    final double calorieProgress = _calorieGoal <= 0 ? 0 : (currentCalories / _calorieGoal).clamp(0.0, 1.0);
-    return Card(
-      child: Padding(
-         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-         child: Row(
-            children: [
-               SizedBox(
-                 width: 110, height: 110,
-                 child: Stack(
-                   fit: StackFit.expand,
-                   children: [
-                     CircularProgressIndicator(value: 1, strokeWidth: 7, backgroundColor: theme.colorScheme.surface, color: theme.colorScheme.surfaceVariant),
-                     CircularProgressIndicator(value: calorieProgress, strokeWidth: 7, strokeCap: StrokeCap.round, color: theme.colorScheme.primary),
-                     Center(
-                       child: Column(
-                         mainAxisAlignment: MainAxisAlignment.center,
-                         children: [
-                           Text(remainingCalories.toStringAsFixed(0), style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, height: 1.1), textAlign: TextAlign.center),
-                           Text('REMAINING', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.secondary, letterSpacing: 0.5)),
-                         ],
-                       ),
-                     ),
-                   ],
-                 ),
-               ),
-               const SizedBox(width: 24),
-               Expanded(
-                 child: Column(
-                   crossAxisAlignment: CrossAxisAlignment.start,
-                   children: [
-                     _buildMacroRow(theme: theme, label: 'Protein', current: macros['protein'] ?? 0, goal: _proteinGoal, color: theme.colorScheme.primaryContainer),
-                     const SizedBox(height: 12),
-                     _buildMacroRow(theme: theme, label: 'Carbs', current: macros['carbs'] ?? 0, goal: _carbGoal, color: theme.colorScheme.tertiary),
-                     const SizedBox(height: 12),
-                     _buildMacroRow(theme: theme, label: 'Fat', current: macros['fat'] ?? 0, goal: _fatGoal, color: theme.colorScheme.secondaryContainer),
-                   ],
-                 ),
-               ),
-            ],
-         ),
-      ),
-    );
-  }
-
-   Widget _buildMacroRow({
-    required ThemeData theme, required String label,
-    required double current, required double goal, required Color color,
-  }) {
-    final double progress = goal <= 0 ? 0 : (current / goal).clamp(0.0, 1.0);
-    return Column(
-       crossAxisAlignment: CrossAxisAlignment.start,
-       children: [
-         Row(
-           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-           children: [
-             Text(label, style: theme.textTheme.titleSmall),
-             Text('${current.toStringAsFixed(0)} / ${goal.toStringAsFixed(0)} g', style: theme.textTheme.bodySmall),
-           ],
-         ),
-         const SizedBox(height: 4),
-         LinearProgressIndicator(
-           value: progress, backgroundColor: theme.colorScheme.surfaceVariant,
-           color: color, minHeight: 6, borderRadius: BorderRadius.circular(3),
-         ),
-       ],
-    );
-  }
-
-  Widget _buildMealCard({
-    required ThemeData theme, required String title, required IconData icon,
-    required Color accentColor,
-    required int calories, required double protein, required double carbs, required double fat,
-    required List<NutritionData> items, required VoidCallback onAdd,
-    required Function(int) onItemTap,
-  }) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Material(
-             color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-             child: InkWell(
-               onTap: () { },
-               child: Row(
-                  children: [
-                     Container(width: 5, height: 50, color: accentColor),
-                     Expanded(
-                       child: Padding(
-                         padding: const EdgeInsets.only(left: 11, right: 8, top: 12, bottom: 12),
-                         child: Row(
-                            children: [
-                              Icon(icon, color: accentColor, size: 20),
-                              const SizedBox(width: 12),
-                              Text(title, style: theme.textTheme.titleLarge),
-                              const Spacer(),
-                              Text('$calories kcal', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.secondary)),
-                              IconButton(
-                                iconSize: 24, visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-                                onPressed: onAdd, icon: Icon(Icons.add_circle, color: theme.colorScheme.primary),
-                                tooltip: 'Add food to $title',
-                              ),
-                            ],
-                         ),
-                       ),
-                     ),
-                  ],
-               ),
-             ),
+  Widget _buildDateSelector() {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _formatDate(_selectedDate),
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.5,
           ),
-          if (calories > 0)
-             Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                   'P: ${protein.toStringAsFixed(0)}g   C: ${carbs.toStringAsFixed(0)}g   F: ${fat.toStringAsFixed(0)}g',
-                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.secondary),
-                ),
-             ),
-          if (items.isNotEmpty) const Divider(height: 16, thickness: 1, indent: 16, endIndent: 16),
-          if (items.isEmpty)
-             Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                child: Center(
-                  child: Text( 'Tap + to add food',
-                    style: theme.textTheme.bodyMedium?.copyWith( color: theme.textTheme.bodyMedium?.color?.withOpacity(0.6) ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDailySummary(BuildContext context) {
+    final theme = Theme.of(context);
+    final totalMacros = _getTotalMacros();
+    final double currentCalories = totalMacros['calories'] ?? 0;
+    final int remaining = (_calorieGoal - currentCalories).round();
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          // Calorie Ring
+          SizedBox(
+            height: 180,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: CircularProgressIndicator(
+                    value: (currentCalories / _calorieGoal).clamp(0.0, 1.0),
+                    strokeWidth: 12,
+                    backgroundColor: theme.colorScheme.surface,
+                    valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+                    strokeCap: StrokeCap.round,
                   ),
                 ),
-              )
-          else
-             Column(
-                children: List.generate(items.length, (index) {
-                   final item = items[index];
-                   return InkWell(
-                     onTap: () => onItemTap(index),
-                     child: ListTile(
-                       title: Text(item.dishName),
-                       subtitle: Text( '${item.weight.toStringAsFixed(0)}g ・ P ${item.protein.toStringAsFixed(0)} C ${item.carbs.toStringAsFixed(0)} F ${item.fat.toStringAsFixed(0)}', ),
-                       trailing: Text('${item.calories.toStringAsFixed(0)} kcal'),
-                     ),
-                   );
-                }),
-             ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      remaining > 0 ? remaining.toString() : '0',
+                      style: theme.textTheme.displayLarge?.copyWith(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w300,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'KCAL LEFT',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        letterSpacing: 1.5,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          // Macros Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildMacroIndicator(
+                theme,
+                'Protein',
+                totalMacros['protein'] ?? 0,
+                _proteinGoal,
+                theme.colorScheme.primaryContainer,
+              ),
+              _buildMacroIndicator(
+                theme,
+                'Carbs',
+                totalMacros['carbs'] ?? 0,
+                _carbGoal,
+                theme.colorScheme.tertiary,
+              ),
+              _buildMacroIndicator(
+                theme,
+                'Fat',
+                totalMacros['fat'] ?? 0,
+                _fatGoal,
+                theme.colorScheme.secondaryContainer,
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildMacroIndicator(ThemeData theme, String label, double current, double goal, Color color) {
+    final percentage = (current / goal * 100).clamp(0, 100).toInt();
+    return Column(
+      children: [
+        Text(
+          '${current.toInt()}g',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(2),
+          ),
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: (percentage / 100).clamp(0.0, 1.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMealsSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final meals = [
+      {'name': 'Breakfast', 'icon': Icons.wb_sunny_outlined},
+      {'name': 'Lunch', 'icon': Icons.wb_cloudy_outlined},
+      {'name': 'Dinner', 'icon': Icons.nightlight_outlined},
+      {'name': 'Snacks', 'icon': Icons.local_cafe_outlined},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 16),
+          child: Text(
+            'Meals',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onBackground.withOpacity(0.5),
+            ),
+          ),
+        ),
+        ...meals.map((meal) {
+          final mealName = meal['name'] as String;
+          final items = _dailyMeals[mealName] ?? [];
+          return _buildMealCard(
+            theme,
+            mealName,
+            meal['icon'] as IconData,
+            items,
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildMealCard(ThemeData theme, String title, IconData icon, List<NutritionData> items) {
+    final totalCalories = items.fold(0, (sum, item) => sum + item.calories.toInt());
+    final hasItems = items.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _navigateAndAddMeal(title),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: theme.colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        hasItems ? '$totalCalories kcal' : 'Tap to add',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: hasItems 
+                            ? theme.colorScheme.primary 
+                            : theme.textTheme.bodySmall?.color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.add_circle_outline,
+                  color: theme.colorScheme.primary.withOpacity(0.6),
+                  size: 24,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+      return DateFormat.MMMd().format(date);
+    }
+    if (date.year == now.year && date.month == now.month && date.day == now.day - 1) {
+      return 'Yesterday';
+    }
+    return DateFormat.MMMd().format(date);
+  }
+
+  Map<String, double> _getTotalMacros() {
+    double calories = 0, protein = 0, carbs = 0, fat = 0;
+    for (var list in _dailyMeals.values) {
+      for (var item in list) {
+        calories += item.calories;
+        protein += item.protein;
+        carbs += item.carbs;
+        fat += item.fat;
+      }
+    }
+    return {'calories': calories, 'protein': protein, 'carbs': carbs, 'fat': fat};
   }
 }

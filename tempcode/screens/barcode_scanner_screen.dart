@@ -1,7 +1,5 @@
-import 'package:calorie_counter_app/services/connectivity_service.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:provider/provider.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({super.key});
@@ -24,12 +22,6 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 
   void _handleBarcode(BarcodeCapture capture) {
-    final connectivityService = Provider.of<ConnectivityService>(context, listen: false);
-    if (!connectivityService.isOnline) {
-      _showErrorAndResume('No internet connection.');
-      return;
-    }
-
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
 

@@ -1,9 +1,11 @@
+import 'package:calorie_counter_app/screens/home_screen.dart';
+import 'package:calorie_counter_app/services/firestore_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
-import 'home_screen.dart';
+enum Gender { male, female }
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -14,9 +16,11 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   final PageController _pageController = PageController();
+  final _firestoreService = FirestoreService();
   int _currentPage = 0;
+  bool _isLoading = false;
 
-  // Animation local asset paths
+  // Page data
   final List<String> _animationPaths = [
     'assets/lottie/welcome.json',
     'assets/lottie/profile.json',
@@ -34,10 +38,10 @@ class _SetupScreenState extends State<SetupScreen> {
   };
 
   // Page 2: Profile
-  String? _selectedGender;
-  final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _weightController = TextEditingController();
-  final TextEditingController _heightController = TextEditingController();
+  Gender? _selectedGender;
+  final _ageController = TextEditingController();
+  final _weightController = TextEditingController();
+  final _heightController = TextEditingController();
 
   // Page 3: Activity Level
   String? _selectedActivityLevel;
@@ -54,7 +58,7 @@ class _SetupScreenState extends State<SetupScreen> {
     super.initState();
     _setDefaultLanguage();
   }
-  
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -65,31 +69,84 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   void _setDefaultLanguage() {
-    final String systemLocale = Platform.localeName.split('_')[0];
-    if (_supportedLanguages.containsKey(systemLocale)) {
-      setState(() {
-        _selectedLanguage = systemLocale;
-      });
+    try {
+      final String systemLocale = Platform.localeName.split('_')[0];
+      if (_supportedLanguages.containsKey(systemLocale)) {
+        setState(() {
+          _selectedLanguage = systemLocale;
+        });
+      }
+    } catch (e) {
+      // Fallback to english if locale parsing fails
+      _selectedLanguage = 'en';
     }
   }
 
   Future<void> _saveAndFinish() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isSetupComplete', true);
-    if (_selectedLanguage != null) await prefs.setString('userLanguage', _selectedLanguage!);
-    if (_selectedGender != null) await prefs.setString('gender', _selectedGender!);
-    if (_ageController.text.isNotEmpty) await prefs.setInt('age', int.parse(_ageController.text));
-    if (_weightController.text.isNotEmpty) await prefs.setDouble('weight', double.parse(_weightController.text));
-    if (_heightController.text.isNotEmpty) await prefs.setDouble('height', double.parse(_heightController.text));
-    if (_selectedActivityLevel != null) await prefs.setString('activityLevel', _selectedActivityLevel!);
+    if (_selectedGender == null || _ageController.text.isEmpty || _weightController.text.isEmpty || _heightController.text.isEmpty || _selectedActivityLevel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete all fields to finish.')),
+      );
+      return;
+    }
+    setState(() => _isLoading = true);
 
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isLoading = false);
+      return; // Should not happen
+    }
+
+    // Calculate goals
+    final age = int.tryParse(_ageController.text) ?? 0;
+    final weight = double.tryParse(_weightController.text) ?? 0;
+    final height = double.tryParse(_heightController.text) ?? 0;
+    double bmr = (_selectedGender == Gender.male)
+        ? (10 * weight + 6.25 * height - 5 * age + 5)
+        : (10 * weight + 6.25 * height - 5 * age - 161);
+    const multipliers = {'sedentary': 1.2, 'light': 1.375, 'moderate': 1.55, 'active': 1.725, 'very_active': 1.9};
+    double dailyCalories = bmr * (multipliers[_selectedActivityLevel] ?? 1.2);
+
+    final userData = {
+      'userLanguage': _selectedLanguage,
+      'age': age,
+      'weight': weight,
+      'height': height,
+      'gender': _selectedGender?.name,
+      'activityLevel': _selectedActivityLevel,
+      'autoCalculateGoals': true,
+      'calorieGoal': dailyCalories,
+      'proteinGoal': (dailyCalories * 0.30) / 4,
+      'carbGoal': (dailyCalories * 0.40) / 4,
+      'fatGoal': (dailyCalories * 0.30) / 9,
+    };
+
+    await _firestoreService.saveUserSetup(user.uid, userData);
     _navigateToHome();
   }
 
   Future<void> _skipSetup() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isSetupComplete', true);
-    if (_selectedLanguage != null) await prefs.setString('userLanguage', _selectedLanguage!);
+    setState(() => _isLoading = true);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    final userData = {
+      'userLanguage': _selectedLanguage ?? 'en',
+      // Set default placeholder values
+      'age': 25,
+      'weight': 70,
+      'height': 175,
+      'gender': 'male',
+      'activityLevel': 'moderate',
+      'autoCalculateGoals': true,
+      'calorieGoal': 2200.0,
+      'proteinGoal': 165.0,
+      'carbGoal': 220.0,
+      'fatGoal': 73.0,
+    };
+    await _firestoreService.saveUserSetup(user.uid, userData);
     _navigateToHome();
   }
 
@@ -99,12 +156,6 @@ class _SetupScreenState extends State<SetupScreen> {
         MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     }
-  }
-
-  void _onPageChanged(int page) {
-    setState(() {
-      _currentPage = page;
-    });
   }
 
   @override
@@ -127,7 +178,7 @@ class _SetupScreenState extends State<SetupScreen> {
               duration: const Duration(milliseconds: 250),
               child: Lottie.asset(
                 _animationPaths[_currentPage],
-                key: ValueKey<int>(_currentPage), // Change key to trigger animation switch
+                key: ValueKey<int>(_currentPage),
                 fit: BoxFit.contain,
               ),
             ),
@@ -136,7 +187,7 @@ class _SetupScreenState extends State<SetupScreen> {
             flex: 3,
             child: PageView(
               controller: _pageController,
-              onPageChanged: _onPageChanged,
+              onPageChanged: (page) => setState(() => _currentPage = page),
               children: [
                 _buildLanguagePage(theme),
                 _buildProfilePage(theme),
@@ -160,14 +211,17 @@ class _SetupScreenState extends State<SetupScreen> {
             children: List.generate(3, (index) => _buildDot(index, theme)),
           ),
           ElevatedButton(
-            onPressed: () {
+            style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+            onPressed: _isLoading ? null : () {
               if (_currentPage < 2) {
                 _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeIn);
               } else {
                 _saveAndFinish();
               }
             },
-            child: Text(_currentPage < 2 ? 'Next' : 'Finish'),
+            child: _isLoading 
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text(_currentPage < 2 ? 'Next' : 'Finish'),
           ),
         ],
       ),
@@ -193,7 +247,7 @@ class _SetupScreenState extends State<SetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.displaySmall),
+          Text(title, style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(subtitle, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.secondary)),
           const SizedBox(height: 40),
@@ -213,41 +267,33 @@ class _SetupScreenState extends State<SetupScreen> {
           return DropdownMenuItem<String>(value: entry.key, child: Text(entry.value));
         }).toList(),
         onChanged: (value) => setState(() => _selectedLanguage = value),
-        decoration: const InputDecoration(labelText: 'Language', prefixIcon: Icon(Icons.language_outlined)),
+        decoration: const InputDecoration(labelText: 'Language', border: OutlineInputBorder(), prefixIcon: Icon(Icons.language_outlined)),
       ),
     );
   }
 
   Widget _buildProfilePage(ThemeData theme) {
-    Widget genderIcon;
-    if (_selectedGender == 'male') {
-      genderIcon = Icon(Icons.male, color: Colors.blue.shade300);
-    } else if (_selectedGender == 'female') {
-      genderIcon = Icon(Icons.female, color: Colors.pink.shade200);
-    } else {
-      genderIcon = const Icon(Icons.person_search_outlined);
-    }
-
     return _buildPage(
       title: 'Your Profile',
       subtitle: 'This helps in calculating your personalized goals.',
       child: SingleChildScrollView(
         child: Column(
           children: [
-            DropdownButtonFormField<String>(
+            DropdownButtonFormField<Gender>(
               value: _selectedGender,
-              items: const ['male', 'female'].map((gender) {
-                return DropdownMenuItem<String>(value: gender, child: Text(gender[0].toUpperCase() + gender.substring(1)));
+              items: Gender.values.map((gender) {
+                return DropdownMenuItem<Gender>(value: gender, child: Text(gender.name[0].toUpperCase() + gender.name.substring(1)));
               }).toList(),
               onChanged: (value) => setState(() => _selectedGender = value),
-              decoration: InputDecoration(labelText: 'Gender', prefixIcon: genderIcon),
+              decoration: const InputDecoration(labelText: 'Gender', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person_search_outlined)),
+              validator: (v) => v == null ? 'Please select a gender' : null,
             ),
             const SizedBox(height: 20),
-            TextField(controller: _ageController, decoration: InputDecoration(labelText: 'Age', prefixIcon: Icon(Icons.cake_outlined, color: theme.colorScheme.tertiary)), keyboardType: TextInputType.number),
+            TextFormField(controller: _ageController, decoration: InputDecoration(labelText: 'Age', border: const OutlineInputBorder(), prefixIcon: Icon(Icons.cake_outlined, color: theme.colorScheme.tertiary)), keyboardType: TextInputType.number, validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0 ? 'Invalid age' : null),
             const SizedBox(height: 20),
-            TextField(controller: _weightController, decoration: InputDecoration(labelText: 'Weight (kg)', prefixIcon: Icon(Icons.monitor_weight_outlined, color: theme.colorScheme.primaryContainer)), keyboardType: TextInputType.number),
+            TextFormField(controller: _weightController, decoration: InputDecoration(labelText: 'Weight (kg)', border: const OutlineInputBorder(), prefixIcon: Icon(Icons.monitor_weight_outlined, color: theme.colorScheme.primaryContainer)), keyboardType: TextInputType.number, validator: (v) => (double.tryParse(v ?? '') ?? 0) <= 0 ? 'Invalid weight' : null),
             const SizedBox(height: 20),
-            TextField(controller: _heightController, decoration: InputDecoration(labelText: 'Height (cm)', prefixIcon: Icon(Icons.height_outlined, color: theme.colorScheme.secondaryContainer)), keyboardType: TextInputType.number),
+            TextFormField(controller: _heightController, decoration: InputDecoration(labelText: 'Height (cm)', border: const OutlineInputBorder(), prefixIcon: Icon(Icons.height_outlined, color: theme.colorScheme.secondaryContainer)), keyboardType: TextInputType.number, validator: (v) => (double.tryParse(v ?? '') ?? 0) <= 0 ? 'Invalid height' : null),
           ],
         ),
       ),
@@ -263,42 +309,29 @@ class _SetupScreenState extends State<SetupScreen> {
       'very_active': Icon(Icons.local_fire_department_outlined, color: Colors.red.shade400),
     };
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Activity Level', style: Theme.of(context).textTheme.displaySmall),
-          const SizedBox(height: 8),
-          Text('How active are you on a weekly basis?', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.secondary)),
-          const SizedBox(height: 40),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _activityLevels.length,
-              itemBuilder: (context, index) {
-                final entry = _activityLevels.entries.elementAt(index);
-                final bool isSelected = _selectedActivityLevel == entry.key;
-                return Card(
-                  color: isSelected ? theme.colorScheme.primary.withOpacity(0.2) : theme.colorScheme.surface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outline.withOpacity(0.2), width: 1.5),
-                  ),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    leading: activityIcons[entry.key],
-                    title: Text(entry.value.split(':')[0]),
-                    subtitle: Text(entry.value.split(':')[1].trim()),
-                    onTap: () => setState(() => _selectedActivityLevel = entry.key),
-                    selected: isSelected,
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+    return _buildPage(
+      title: 'Activity Level',
+      subtitle: 'How active are you on a weekly basis?',
+      child: Expanded(
+        child: ListView.builder(
+          itemCount: _activityLevels.length,
+          itemBuilder: (context, index) {
+            final entry = _activityLevels.entries.elementAt(index);
+            final bool isSelected = _selectedActivityLevel == entry.key;
+            return Card(
+              color: isSelected ? theme.colorScheme.primary.withOpacity(0.1) : null,
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                leading: activityIcons[entry.key],
+                title: Text(entry.value.split(':')[0]),
+                subtitle: Text(entry.value.split(':')[1].trim()),
+                onTap: () => setState(() => _selectedActivityLevel = entry.key),
+                selected: isSelected,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 }
-
