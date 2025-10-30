@@ -23,37 +23,41 @@ exports.analyzeImage = onRequest(
 
       try {
         // Допускаем данные как в req.body.data, так и напрямую в req.body
-        const { imageBase64, mimeType, promptText } = req.body.data || req.body;
+        const { imageBase64, mimeType, languageCode = 'en' } = req.body.data || req.body;
 
         if (!imageBase64 || !mimeType) {
           console.error("Missing imageBase64 or mimeType in request body.");
           return res.status(400).json({ error: "Missing imageBase64 or mimeType" });
         }
 
-        console.log('Request received. Image size:', imageBase64.length, 'chars. MIME type:', mimeType);
+        console.log('Request received. Language:', languageCode, 'Image size:', imageBase64.length, 'chars. MIME type:', mimeType);
 
         const model = genAI.getGenerativeModel({
-          model: "gemini-2.5-flash" // Твоя модель
+          model: "gemini-2.5-flash" // Using gemini-2.5-flash as requested
         });
         console.log('Using model: gemini-2.5-flash');
 
-        // --- ОРИГИНАЛЬНЫЙ РУССКИЙ ПРОМПТ ---
-        const defaultPrompt = `Проанализируй это изображение еды и верни ТОЛЬКО JSON в следующем формате:
+        // --- NEW MULTI-LANGUAGE PROMPT ---
+        const prompt = `
+As an expert nutritionist, analyze the food image provided.
 
+Your response MUST be a single, valid JSON object, without any markdown formatting, backticks, or other non-JSON text.
+
+Based on the user's language code "${languageCode}", the "dish_name" must be in that language.
+
+JSON structure required:
 {
-  "dish_name": "название блюда",
-  "weight": число (вес в граммах),
-  "calories": число,
-  "protein": число (граммы),
-  "fat": число (граммы),
-  "carbs": число (граммы),
-  "ingredients": ["ингредиент1", "ингредиент2"]
+  "dish_name": "[name of the dish in the specified language]",
+  "weight": [number, in grams],
+  "calories": [number],
+  "protein": [number, in grams],
+  "fat": [number, in grams],
+  "carbs": [number, in grams],
+  "ingredients": ["ingredient1", "ingredient2"],
+  "usefulness": [a score from 0 to 10 representing the health benefit of this food]
 }
-
-ВАЖНО: Отвечай ТОЛЬКО валидным JSON, без markdown, без \`\`\`json и без лишнего текста.`;
-        // --- КОНЕЦ ОРИГИНАЛЬНОГО ПРОМПТА ---
-
-        const finalPrompt = promptText || defaultPrompt; // Используем пользовательский промпт, если он есть
+`;
+        // --- END OF NEW PROMPT ---
 
         const imagePart = {
           inlineData: { data: imageBase64, mimeType: mimeType }
@@ -61,7 +65,7 @@ exports.analyzeImage = onRequest(
 
         console.log('Sending request to Gemini API...');
 
-        const result = await model.generateContent([finalPrompt, imagePart]);
+        const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
 
         // Простая проверка ответа

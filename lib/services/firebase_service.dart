@@ -8,7 +8,7 @@ class FirebaseService {
   static const String _functionUrl = 
       'https://us-central1-calorie-counter-app-bf67e.cloudfunctions.net/analyzeImage';
 
-  Future<NutritionData> analyzeImage(File imageFile, String? additionalInfo) async {
+  Future<NutritionData> analyzeImage(File imageFile, String? additionalInfo, String languageCode) async {
     try {
       final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
@@ -16,30 +16,11 @@ class FirebaseService {
       final extension = imageFile.path.split('.').last.toLowerCase();
       final mimeType = extension == 'png' ? 'image/png' : 'image/jpeg';
 
-      String promptText = '''Проанализируй это изображение еды и верни ТОЛЬКО JSON в следующем формате:
-
-{
-  "dish_name": "название блюда",
-  "weight": число (вес в граммах),
-  "calories": число,
-  "protein": число (граммы),
-  "fat": число (граммы),
-  "carbs": число (граммы),
-  "ingredients": ["ингредиент1", "ингредиент2"]
-}
-
-ВАЖНО: Отвечай ТОЛЬКО валидным JSON, без markdown, без ```json и без лишнего текста.''';
-      
-      if (additionalInfo != null && additionalInfo.isNotEmpty) {
-        promptText += '\n\nДополнительная информация от пользователя: $additionalInfo';
-      }
-
       final requestBody = {
-        'data': {
-          'imageBase64': base64Image,
-          'mimeType': mimeType,
-          'promptText': promptText,
-        }
+        'imageBase64': base64Image,
+        'mimeType': mimeType,
+        'languageCode': languageCode,
+        // The 'additionalInfo' is now handled by the backend prompt, but we could pass it if needed.
       };
 
       final response = await http.post(
@@ -49,12 +30,8 @@ class FirebaseService {
           'Accept': 'application/json',
         },
         body: jsonEncode(requestBody),
-      ).timeout(
-        const Duration(seconds: 60),
-        onTimeout: () {
-          throw TimeoutException('Request timeout after 60 seconds');
-        },
-      );
+      ).timeout(const Duration(seconds: 60));
+
 
       if (response.statusCode == 200) {
         try {
