@@ -88,6 +88,8 @@ functions/serviceAccountKey.json
 .envrc
 *.key
 *.pem
+firebase_options.dart
+**/firebase_options.dart
 
 ########################################
 # 🧰 IDEs and Editors
