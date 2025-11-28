@@ -6,6 +6,12 @@ import 'package:flutter/foundation.dart'
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
 ///
+/// HOW TO USE THIS FILE:
+/// 1. Copy this file to `firebase_options.dart` (remove .example extension)
+/// 2. Run `flutterfire configure` to generate your actual Firebase configuration
+///    OR manually fill in your Firebase project credentials below
+/// 3. Never commit `firebase_options.dart` to git (it's in .gitignore)
+///
 /// Example:
 /// ```dart
 /// import 'firebase_options.dart';
@@ -41,48 +47,48 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyD7OXf1lvvP6zyE6Xlmn2bt8jqBsgRAWJ4',
-    appId: '1:643544470647:web:63d04ad0a890995ff8e272',
-    messagingSenderId: '643544470647',
-    projectId: 'calorie-counter-app-bf67e',
-    authDomain: 'calorie-counter-app-bf67e.firebaseapp.com',
-    storageBucket: 'calorie-counter-app-bf67e.firebasestorage.app',
-    measurementId: 'G-S7SY3DS7P1',
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+    measurementId: 'YOUR_MEASUREMENT_ID',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCb2RboKRYaLhxHAsHeMQ4S7ZIBd6ZUXXw',
-    appId: '1:643544470647:android:5e5ad74aa1be076ef8e272',
-    messagingSenderId: '643544470647',
-    projectId: 'calorie-counter-app-bf67e',
-    storageBucket: 'calorie-counter-app-bf67e.firebasestorage.app',
+    apiKey: 'YOUR_ANDROID_API_KEY',
+    appId: 'YOUR_ANDROID_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBtiKK88mwcj2K93t46z_Hzg6ZvITU_1K0',
-    appId: '1:643544470647:ios:8ec188e320e27311f8e272',
-    messagingSenderId: '643544470647',
-    projectId: 'calorie-counter-app-bf67e',
-    storageBucket: 'calorie-counter-app-bf67e.firebasestorage.app',
+    apiKey: 'YOUR_IOS_API_KEY',
+    appId: 'YOUR_IOS_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
     iosBundleId: 'com.example.calorieCounterApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBtiKK88mwcj2K93t46z_Hzg6ZvITU_1K0',
-    appId: '1:643544470647:ios:8ec188e320e27311f8e272',
-    messagingSenderId: '643544470647',
-    projectId: 'calorie-counter-app-bf67e',
-    storageBucket: 'calorie-counter-app-bf67e.firebasestorage.app',
+    apiKey: 'YOUR_MACOS_API_KEY',
+    appId: 'YOUR_MACOS_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
     iosBundleId: 'com.example.calorieCounterApp',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyD7OXf1lvvP6zyE6Xlmn2bt8jqBsgRAWJ4',
-    appId: '1:643544470647:web:d3cbc360d8ca64a3f8e272',
-    messagingSenderId: '643544470647',
-    projectId: 'calorie-counter-app-bf67e',
-    authDomain: 'calorie-counter-app-bf67e.firebaseapp.com',
-    storageBucket: 'calorie-counter-app-bf67e.firebasestorage.app',
-    measurementId: 'G-9XV0994P3T',
+    apiKey: 'YOUR_WINDOWS_API_KEY',
+    appId: 'YOUR_WINDOWS_APP_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+    measurementId: 'YOUR_MEASUREMENT_ID',
   );
 }
